@@ -1,5 +1,7 @@
 target
 .direnv
+.env
+.helix/
 helix-term/rustfmt.toml
 result
 runtime/grammars
