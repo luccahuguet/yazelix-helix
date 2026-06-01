@@ -27,11 +27,15 @@ Optional context:
 - `ZELLIJ_TAB_POSITION`
 - `ZELLIJ_PANE_ID`
 
-When enabled, Helix writes bridge registry, token, and socket files below:
+When enabled, Helix writes bridge registry and token files below:
 
 ```text
 $YAZELIX_STATE_DIR/helix_bridge/<session_id>/
 ```
+
+The registry advertises the native local IPC transport for the current
+platform: Unix sockets on Unix-like systems and best-effort named pipes on
+native Windows.
 
 Supported first-slice actions:
 

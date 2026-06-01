@@ -1,6 +1,6 @@
 use std::{
     fs,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     sync::mpsc,
     time::Duration,
@@ -16,7 +16,7 @@ const SESSION_ID_ENV: &str = "YAZELIX_HELIX_BRIDGE_SESSION_ID";
 const INSTANCE_ID_ENV: &str = "YAZELIX_HELIX_BRIDGE_INSTANCE_ID";
 const AUTH_TOKEN_ENV: &str = "YAZELIX_HELIX_BRIDGE_AUTH_TOKEN";
 const MANAGED_CONFIG_ENV: &str = "YAZELIX_HELIX_MANAGED_CONFIG_PATH";
-const BRIDGE_SCHEMA_VERSION: u8 = 1;
+const BRIDGE_SCHEMA_VERSION: u8 = 2;
 const DEFAULT_TIMEOUT_MS: u64 = 1_500;
 const MAX_TIMEOUT_MS: u64 = 10_000;
 
@@ -27,7 +27,7 @@ pub(crate) struct BridgeRuntime {
 }
 
 pub(crate) struct YazelixBridge {
-    socket_path: PathBuf,
+    transport: BridgeTransport,
     registry_path: PathBuf,
     token_path: PathBuf,
 }
@@ -80,12 +80,20 @@ struct BridgeError {
     message: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum BridgeTransport {
+    UnixSocket { path: String },
+    WindowsNamedPipe { name: String },
+}
+
 #[derive(Debug, Serialize)]
 struct BridgeRegistry {
     schema_version: u8,
     session_id: String,
     instance_id: String,
-    socket_path: String,
+    transport: BridgeTransport,
     auth_token_path: String,
     pid: u32,
     zellij_session_name: Option<String>,
@@ -205,18 +213,17 @@ impl YazelixBridge {
         fs::create_dir_all(&bridge_dir)?;
         set_owner_only_dir_permissions(&bridge_dir)?;
 
-        let socket_path = bridge_dir.join(format!("{}.sock", config.instance_id));
         let registry_path = bridge_dir.join(format!("{}.json", config.instance_id));
         let token_path = bridge_dir.join(format!("{}.token", config.instance_id));
+        let transport = bridge_transport(&config, &bridge_dir)?;
 
-        remove_stale_file(&socket_path)?;
         write_private_file(&token_path, &config.auth_token)?;
 
         let registry = BridgeRegistry {
             schema_version: BRIDGE_SCHEMA_VERSION,
             session_id: config.session_id.clone(),
             instance_id: config.instance_id.clone(),
-            socket_path: socket_path.display().to_string(),
+            transport: transport.clone(),
             auth_token_path: token_path.display().to_string(),
             pid: std::process::id(),
             zellij_session_name: config.zellij_session_name.clone(),
@@ -227,10 +234,10 @@ impl YazelixBridge {
         };
         write_private_file(&registry_path, &serde_json::to_string_pretty(&registry)?)?;
 
-        start_listener(socket_path.clone(), config.auth_token, tx)?;
+        start_listener(transport.clone(), config.auth_token, tx)?;
 
         Ok(Self {
-            socket_path,
+            transport,
             registry_path,
             token_path,
         })
@@ -239,27 +246,62 @@ impl YazelixBridge {
 
 impl Drop for YazelixBridge {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.socket_path);
+        #[cfg(unix)]
+        if let BridgeTransport::UnixSocket { path } = &self.transport {
+            let _ = fs::remove_file(path);
+        }
         let _ = fs::remove_file(&self.registry_path);
         let _ = fs::remove_file(&self.token_path);
     }
 }
 
 #[cfg(unix)]
+fn bridge_transport(config: &BridgeConfig, bridge_dir: &Path) -> anyhow::Result<BridgeTransport> {
+    let socket_path = bridge_dir.join(format!("{}.sock", config.instance_id));
+    remove_stale_file(&socket_path)?;
+    Ok(BridgeTransport::UnixSocket {
+        path: socket_path.display().to_string(),
+    })
+}
+
+#[cfg(windows)]
+fn bridge_transport(config: &BridgeConfig, _bridge_dir: &Path) -> anyhow::Result<BridgeTransport> {
+    Ok(BridgeTransport::WindowsNamedPipe {
+        name: format!(
+            r"\\.\pipe\yazelix-helix-{}-{}",
+            config.session_id, config.instance_id
+        ),
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
+fn bridge_transport(_config: &BridgeConfig, _bridge_dir: &Path) -> anyhow::Result<BridgeTransport> {
+    anyhow::bail!("Yazelix Helix bridge requires Unix sockets or Windows named pipes")
+}
+
+#[cfg(unix)]
 fn start_listener(
-    socket_path: PathBuf,
+    transport: BridgeTransport,
     auth_token: String,
     tx: UnboundedSender<BridgeCommand>,
 ) -> anyhow::Result<()> {
-    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::os::unix::net::UnixListener;
 
+    let BridgeTransport::UnixSocket { path } = transport else {
+        anyhow::bail!("Unix Helix bridge listener received a non-Unix transport")
+    };
+    let socket_path = PathBuf::from(path);
     let listener = UnixListener::bind(&socket_path)?;
     std::thread::Builder::new()
         .name("yazelix-helix-bridge".into())
         .spawn(move || {
             for stream in listener.incoming() {
                 match stream {
-                    Ok(stream) => handle_connection(stream, &auth_token, &tx),
+                    Ok(mut stream) => {
+                        let _ = stream.set_read_timeout(Some(Duration::from_millis(2_000)));
+                        let _ = stream.set_write_timeout(Some(Duration::from_millis(2_000)));
+                        handle_connection(&mut stream, &auth_token, &tx);
+                    }
                     Err(err) => {
                         log::warn!("Yazelix Helix bridge listener failed: {err}");
                         break;
@@ -268,33 +310,94 @@ fn start_listener(
             }
         })?;
 
-    fn handle_connection(
-        mut stream: UnixStream,
-        auth_token: &str,
-        tx: &UnboundedSender<BridgeCommand>,
-    ) {
-        let _ = stream.set_read_timeout(Some(Duration::from_millis(2_000)));
-        let _ = stream.set_write_timeout(Some(Duration::from_millis(2_000)));
+    Ok(())
+}
 
-        let mut line = String::new();
-        let mut reader = match stream.try_clone() {
-            Ok(stream) => BufReader::new(stream),
-            Err(err) => {
-                write_response(
-                    &mut stream,
-                    BridgeResponse::error(
-                        "",
-                        "internal_error",
-                        format!("Could not clone stream: {err}"),
-                    ),
+#[cfg(windows)]
+fn start_listener(
+    transport: BridgeTransport,
+    auth_token: String,
+    tx: UnboundedSender<BridgeCommand>,
+) -> anyhow::Result<()> {
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GetLastError, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
+    };
+    use windows_sys::Win32::System::Pipes::{
+        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_ACCESS_DUPLEX,
+        PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
+    };
+
+    let BridgeTransport::WindowsNamedPipe { name } = transport else {
+        anyhow::bail!("Windows Helix bridge listener received a non-Windows transport")
+    };
+    let pipe_name = windows_wide(&name);
+    std::thread::Builder::new()
+        .name("yazelix-helix-bridge".into())
+        .spawn(move || loop {
+            let handle = unsafe {
+                CreateNamedPipeW(
+                    pipe_name.as_ptr(),
+                    PIPE_ACCESS_DUPLEX,
+                    PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+                    PIPE_UNLIMITED_INSTANCES,
+                    8192,
+                    8192,
+                    0,
+                    std::ptr::null(),
+                )
+            };
+            if handle == INVALID_HANDLE_VALUE {
+                log::warn!(
+                    "Yazelix Helix bridge failed to create named pipe: {}",
+                    std::io::Error::last_os_error()
                 );
-                return;
+                break;
             }
-        };
 
+            let connected = unsafe {
+                ConnectNamedPipe(handle, std::ptr::null_mut()) != 0
+                    || GetLastError() == ERROR_PIPE_CONNECTED
+            };
+            if !connected {
+                log::warn!(
+                    "Yazelix Helix bridge named pipe connect failed: {}",
+                    std::io::Error::last_os_error()
+                );
+                unsafe {
+                    CloseHandle(handle);
+                }
+                continue;
+            }
+
+            let mut pipe = WindowsPipeHandle(handle);
+            handle_connection(&mut pipe, &auth_token, &tx);
+            unsafe {
+                DisconnectNamedPipe(pipe.0);
+            }
+        })?;
+
+    Ok(())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn start_listener(
+    _transport: BridgeTransport,
+    _auth_token: String,
+    _tx: UnboundedSender<BridgeCommand>,
+) -> anyhow::Result<()> {
+    anyhow::bail!("Yazelix Helix bridge requires Unix sockets or Windows named pipes")
+}
+
+fn handle_connection<S>(stream: &mut S, auth_token: &str, tx: &UnboundedSender<BridgeCommand>)
+where
+    S: Read + Write,
+{
+    let mut line = String::new();
+    {
+        let mut reader = BufReader::new(&mut *stream);
         if let Err(err) = reader.read_line(&mut line) {
             write_response(
-                &mut stream,
+                stream,
                 BridgeResponse::error(
                     "",
                     "invalid_payload",
@@ -303,74 +406,63 @@ fn start_listener(
             );
             return;
         }
-
-        let request = match parse_request(&line, auth_token) {
-            Ok(request) => request,
-            Err(response) => {
-                write_response(&mut stream, response);
-                return;
-            }
-        };
-
-        let timeout = Duration::from_millis(
-            request
-                .timeout_ms
-                .unwrap_or(DEFAULT_TIMEOUT_MS)
-                .clamp(1, MAX_TIMEOUT_MS),
-        );
-        let (response_tx, response_rx) = mpsc::channel();
-        let request_id = request.request_id.clone();
-        if tx
-            .send(BridgeCommand {
-                request_id,
-                action: request.action,
-                payload: request.payload,
-                response_tx,
-            })
-            .is_err()
-        {
-            write_response(
-                &mut stream,
-                BridgeResponse::error(
-                    request.request_id,
-                    "stale_instance",
-                    "Helix bridge is no longer accepting requests",
-                ),
-            );
-            return;
-        }
-
-        match response_rx.recv_timeout(timeout) {
-            Ok(response) => write_response(&mut stream, response),
-            Err(mpsc::RecvTimeoutError::Timeout) => write_response(
-                &mut stream,
-                BridgeResponse::error(
-                    request.request_id,
-                    "timeout",
-                    "Timed out waiting for Helix to handle the bridge request",
-                ),
-            ),
-            Err(mpsc::RecvTimeoutError::Disconnected) => write_response(
-                &mut stream,
-                BridgeResponse::error(
-                    request.request_id,
-                    "stale_instance",
-                    "Helix bridge response channel closed",
-                ),
-            ),
-        }
     }
 
-    Ok(())
-}
+    let request = match parse_request(&line, auth_token) {
+        Ok(request) => request,
+        Err(response) => {
+            write_response(stream, response);
+            return;
+        }
+    };
 
-#[cfg(not(unix))]
-fn start_listener(
-    _socket_path: PathBuf,
-    _auth_token: String,
-    _tx: UnboundedSender<BridgeCommand>,
-) -> anyhow::Result<()> {
-    anyhow::bail!("Yazelix Helix bridge currently requires Unix sockets")
+    let timeout = Duration::from_millis(
+        request
+            .timeout_ms
+            .unwrap_or(DEFAULT_TIMEOUT_MS)
+            .clamp(1, MAX_TIMEOUT_MS),
+    );
+    let (response_tx, response_rx) = mpsc::channel();
+    let request_id = request.request_id.clone();
+    if tx
+        .send(BridgeCommand {
+            request_id,
+            action: request.action,
+            payload: request.payload,
+            response_tx,
+        })
+        .is_err()
+    {
+        write_response(
+            stream,
+            BridgeResponse::error(
+                request.request_id,
+                "stale_instance",
+                "Helix bridge is no longer accepting requests",
+            ),
+        );
+        return;
+    }
+
+    match response_rx.recv_timeout(timeout) {
+        Ok(response) => write_response(stream, response),
+        Err(mpsc::RecvTimeoutError::Timeout) => write_response(
+            stream,
+            BridgeResponse::error(
+                request.request_id,
+                "timeout",
+                "Timed out waiting for Helix to handle the bridge request",
+            ),
+        ),
+        Err(mpsc::RecvTimeoutError::Disconnected) => write_response(
+            stream,
+            BridgeResponse::error(
+                request.request_id,
+                "stale_instance",
+                "Helix bridge response channel closed",
+            ),
+        ),
+    }
 }
 
 fn parse_request(line: &str, auth_token: &str) -> Result<BridgeRequest, BridgeResponse> {
@@ -433,6 +525,74 @@ fn write_response(stream: &mut impl Write, response: BridgeResponse) {
             let _ = writeln!(stream, "{fallback}");
         }
     }
+}
+
+#[cfg(windows)]
+struct WindowsPipeHandle(windows_sys::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl Drop for WindowsPipeHandle {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(self.0);
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Read for WindowsPipeHandle {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        use windows_sys::Win32::Storage::FileSystem::ReadFile;
+
+        let mut bytes_read = 0u32;
+        let ok = unsafe {
+            ReadFile(
+                self.0,
+                buffer.as_mut_ptr().cast(),
+                buffer.len().min(u32::MAX as usize) as u32,
+                &mut bytes_read,
+                std::ptr::null_mut(),
+            )
+        };
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(bytes_read as usize)
+    }
+}
+
+#[cfg(windows)]
+impl Write for WindowsPipeHandle {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        use windows_sys::Win32::Storage::FileSystem::WriteFile;
+
+        let mut bytes_written = 0u32;
+        let ok = unsafe {
+            WriteFile(
+                self.0,
+                buffer.as_ptr().cast(),
+                buffer.len().min(u32::MAX as usize) as u32,
+                &mut bytes_written,
+                std::ptr::null_mut(),
+            )
+        };
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(bytes_written as usize)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+fn windows_wide(value: &str) -> Vec<u16> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    OsStr::new(value).encode_wide().chain(Some(0)).collect()
 }
 
 fn matches_enabled(value: &str) -> bool {
@@ -536,7 +696,7 @@ mod tests {
     #[test]
     fn parse_request_rejects_wrong_auth_token() {
         let response = parse_request(
-            r#"{"schema_version":1,"request_id":"r1","auth_token":"wrong","action":"helix.get_context"}"#,
+            r#"{"schema_version":2,"request_id":"r1","auth_token":"wrong","action":"helix.get_context"}"#,
             "expected",
         )
         .unwrap_err();
