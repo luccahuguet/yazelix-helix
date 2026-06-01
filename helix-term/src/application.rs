@@ -426,6 +426,11 @@ impl Application {
                 respond_yazelix_bridge_result(command, response);
                 true
             }
+            "helix.open_directory" => {
+                let response = self.yazelix_bridge_open_directory(&command.payload);
+                respond_yazelix_bridge_result(command, response);
+                true
+            }
             "helix.open_files" => {
                 let response = self.yazelix_bridge_open_files(&command.payload);
                 respond_yazelix_bridge_result(command, response);
@@ -468,6 +473,37 @@ impl Application {
         ));
         Ok(json!({
             "cwd": helix_stdx::env::current_working_dir().display().to_string(),
+        }))
+    }
+
+    fn yazelix_bridge_open_directory(
+        &mut self,
+        payload: &Value,
+    ) -> Result<Value, (&'static str, String)> {
+        let working_dir = absolute_payload_path(payload, "working_dir")?;
+        if !working_dir.is_dir() {
+            return Err((
+                "invalid_payload",
+                format!(
+                    "helix.open_directory requires working_dir to be an existing directory: `{}`",
+                    working_dir.display()
+                ),
+            ));
+        }
+        self.editor.set_cwd(&working_dir).map_err(|err| {
+            (
+                "internal_error",
+                format!(
+                    "Could not change Helix working directory to `{}`: {err}",
+                    working_dir.display()
+                ),
+            )
+        })?;
+        let picker = ui::file_picker(&self.editor, working_dir.clone());
+        self.compositor.push(Box::new(overlaid(picker)));
+        Ok(json!({
+            "cwd": helix_stdx::env::current_working_dir().display().to_string(),
+            "picker_root": working_dir.display().to_string(),
         }))
     }
 

@@ -41,6 +41,7 @@ Supported first-slice actions:
 
 - `helix.get_context`
 - `helix.set_cwd`
+- `helix.open_directory`
 - `helix.open_files`
 
 Zellij remains responsible for panes, tabs, focus, layout, and workspace
