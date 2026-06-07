@@ -1,3 +1,25 @@
+# Yazelix Helix Fork
+
+Yazelix Helix is an active Yazelix fork of Helix's Steel-enabled editor line.
+It is usable as a standalone editor without the full Yazelix workspace.
+
+| Field | Value |
+| --- | --- |
+| Upstream project | Helix, with Yazelix tracking the active Helix Steel line |
+| Fork category | Active fork |
+| Why this fork exists | Yazelix needs a Steel-enabled Helix package with a config-directory override and editor action bridge hooks while keeping `~/.config/helix` untouched |
+| Current Yazelix delta | `--config-dir`, reusable Steel plugin defaults, and Yazelix bridge hooks behind explicit runtime flags |
+| Non-goals | This fork does not own Yazelix workspace orchestration, generated Zellij/Yazi configs, or main-repo release policy |
+| Standalone support | Supported: users can run this fork directly as a Helix editor; Yazelix-only bridge behavior stays behind explicit runtime/session flags |
+| Upstream sync cadence | Monthly or before Helix-sensitive Yazelix releases |
+| Upstreaming/removal gate | Upstream reusable pieces when accepted, but keep the fork while its standalone Steel/defaults value is higher than upstream Helix plus main-repo adapters |
+
+Fork notes and the packaged Steel defaults contract live in
+[YAZELIX.md](./YAZELIX.md). Main Yazelix fork policy lives in
+[Fork and child-repo maintenance](https://github.com/luccahuguet/yazelix/blob/main/docs/contracts/fork_child_repo_maintenance.md).
+
+## Upstream Helix README
+
 <div align="center">
 
 <h1>
@@ -19,12 +41,6 @@
 ![Screenshot](./screenshot.png)
 
 A [Kakoune](https://github.com/mawww/kakoune) / [Neovim](https://github.com/neovim/neovim) inspired editor, written in Rust.
-
-Yazelix Helix is currently a thin Steel-enabled fork that tracks Helix Steel.
-It is usable as a standalone editor without Yazelix, packages reusable Steel
-plugin defaults, and keeps Yazelix integration hooks behind explicit runtime
-flags. Fork notes and the packaged Steel defaults contract live in
-[YAZELIX.md](./YAZELIX.md).
 
 The editing model is very heavily based on Kakoune; during development I found
 myself agreeing with most of Kakoune's design decisions.
