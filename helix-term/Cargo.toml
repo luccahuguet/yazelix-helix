@@ -82,7 +82,7 @@ content_inspector = "0.2.4"
 thiserror.workspace = true
 
 # opening URLs
-open = "5.3.3"
+open = "5.3.5"
 url = "2.5.4"
 
 # config
@@ -96,7 +96,7 @@ steel-core = { workspace = true, optional = true }
 steel-doc = { git = "https://github.com/mattwparas/steel.git", optional = true }
 
 globset = "0.4.16"
-dashmap = "6.0"
+dashmap = "6.2"
 
 parking_lot.workspace = true
 
@@ -106,7 +106,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 
 [target.'cfg(not(windows))'.dependencies]  # https://github.com/vorner/signal-hook/issues/100
 signal-hook-tokio = { version = "0.4", features = ["futures-v0_3"] }
-libc = "0.2.184"
+libc = "0.2.186"
 
 [build-dependencies]
 helix-loader = { path = "../helix-loader" }
