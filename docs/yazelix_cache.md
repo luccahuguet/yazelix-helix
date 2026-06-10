@@ -16,8 +16,8 @@ Helix tree-sitter grammar sources are locked in `grammar_sources.lock.json` and 
 When `languages.toml` grammar sources change, regenerate the lock with:
 
 ```bash
-python3 scripts/grammar_source_lock.py update
-python3 scripts/grammar_source_lock.py validate
+cargo xtask grammar-lock update
+cargo xtask grammar-lock validate
 ```
 
 To check whether the current public child output is available:

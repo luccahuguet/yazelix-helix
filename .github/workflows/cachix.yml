@@ -43,7 +43,7 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Validate grammar source lock
-        run: python3 scripts/grammar_source_lock.py validate
+        run: cargo xtask grammar-lock validate
 
       - name: Build Yazelix Helix package
         run: |

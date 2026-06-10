@@ -19,8 +19,8 @@ Only Yazelix Helix-specific guidance belongs here.
 - `cargo fmt --all -- --check`
 - `cargo check -p helix-term`
 - `cargo test -p helix-term yazelix_bridge --features steel`
-- `python3 scripts/grammar_source_lock.py validate`
-- `python3 scripts/grammar_source_lock.py update` when `languages.toml` grammar sources change
+- `cargo xtask grammar-lock validate`
+- `cargo xtask grammar-lock update` when `languages.toml` grammar sources change
 - `nix build .#yazelix_helix --no-link`
 
 ## Integration Notes

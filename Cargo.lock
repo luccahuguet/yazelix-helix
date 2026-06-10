@@ -4524,6 +4524,8 @@ dependencies = [
  "helix-loader",
  "helix-term",
  "helix-view",
+ "serde",
+ "serde_json",
  "toml",
 ]
 

@@ -1,5 +1,6 @@
 mod codegen;
 mod docgen;
+mod grammar_source_lock;
 mod helpers;
 mod path;
 
@@ -174,9 +175,34 @@ Usage: Run with `cargo xtask <task>`, eg. `cargo xtask docgen`.
                                    languages, or all languages if none are specified.
         theme-check [themes]       Check that the theme files in runtime/themes/ are valid for the
                                    given themes, or all themes if none are specified.
+        grammar-lock validate      Check grammar_sources.lock.json against languages.toml.
+        grammar-lock update        Regenerate grammar_sources.lock.json. Optional args:
+                                   --jobs <N> and one or more grammar names.
 "
         );
     }
+}
+
+fn parse_grammar_lock_update_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<(Vec<String>, usize), DynError> {
+    let mut grammars = Vec::new();
+    let mut jobs = 8usize;
+
+    while let Some(arg) = args.next() {
+        if arg == "--jobs" {
+            let value = args
+                .next()
+                .ok_or("grammar-lock update --jobs requires a value")?;
+            jobs = value
+                .parse()
+                .map_err(|_| format!("invalid --jobs value: {value}"))?;
+            continue;
+        }
+        grammars.push(arg);
+    }
+
+    Ok((grammars, jobs))
 }
 
 fn main() -> Result<(), DynError> {
@@ -190,6 +216,17 @@ fn main() -> Result<(), DynError> {
             "steel" => tasks::install_steel(),
             "query-check" => tasks::querycheck(args)?,
             "theme-check" => tasks::themecheck(args)?,
+            "grammar-lock" => match args.next().as_deref() {
+                Some("validate") => grammar_source_lock::validate()?,
+                Some("update") => {
+                    let (grammars, jobs) = parse_grammar_lock_update_args(args)?;
+                    grammar_source_lock::update(grammars, jobs)?;
+                }
+                Some(invalid) => {
+                    return Err(format!("Invalid grammar-lock subcommand: {invalid}").into())
+                }
+                None => return Err("grammar-lock requires validate or update".into()),
+            },
             invalid => return Err(format!("Invalid task name: {}", invalid).into()),
         },
     };

@@ -36,7 +36,7 @@
   gitGrammars = builtins.filter isGitGrammar grammarsToUse;
   requireLockEntry = name:
     if !(grammarLock.grammars ? ${name}) then
-      throw "grammar_sources.lock.json is missing entry for grammar '${name}'. Run: python3 scripts/grammar_source_lock.py update"
+      throw "grammar_sources.lock.json is missing entry for grammar '${name}'. Run: cargo xtask grammar-lock update"
     else grammarLock.grammars.${name};
   fetchGrammarSrc = grammar: let
     entry = requireLockEntry grammar.name;
