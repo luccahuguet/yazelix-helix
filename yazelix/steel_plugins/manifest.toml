@@ -17,6 +17,9 @@ command_descriptions = { "show-splash" = "Render the optional Yazelix splash ove
 [[plugins]]
 id = "spacemacs_theme"
 source = "cogs/themes/spacemacs.scm"
+internal_commands = ["activate-spacemacs-theme"]
+startup_commands = ["activate-spacemacs-theme"]
+command_descriptions = { "activate-spacemacs-theme" = "Activate the registered Spacemacs Steel theme" }
 
 [[plugins]]
 id = "keymaps"

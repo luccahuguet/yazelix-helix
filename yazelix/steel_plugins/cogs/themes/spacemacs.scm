@@ -2,9 +2,11 @@
 ; (require-builtin helix/components)
 
 (require "helix/components.scm")
+(require (prefix-in helix. "helix/commands.scm"))
 (require (prefix-in theme. "helix/themes.scm"))
 
 (provide built-theme
+         activate-spacemacs-theme
          scale-up
          scale-down
          scale-color)
@@ -303,13 +305,13 @@
 
 (theme.register-theme built-theme)
 
+(define (activate-spacemacs-theme)
+  (helix.theme "spacemacs"))
+
 ; (provide built-theme
 ;          scale-up
 ;          scale-down
 ;          scale-color)
-
-; (helix.theme "spacemacs")
-; (helix.theme "spacemacs")
 
 ; (provide built-theme
 ;          scale-up
