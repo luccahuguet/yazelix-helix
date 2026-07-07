@@ -1963,10 +1963,13 @@
     },
     "wikitext": {
       "fetcher": "github",
-      "hash": "sha256-3wEuoko0/EpA10JloV9O95zMK+NSqaGV4x59puvT3dE=",
+      "hash": "sha256-1H7H6NVkZWoWQASME+TqiVACvTtBRD3hO+JzFn6NZc0=",
       "owner": "santhoshtr",
       "repo": "tree-sitter-wikitext",
-      "rev": "444214b31695e9dd4d32fb06247397fb8778a9d2"
+      "rev": "444214b31695e9dd4d32fb06247397fb8778a9d2",
+      "sparseCheckout": [
+        "src"
+      ]
     },
     "wit": {
       "fetcher": "github",

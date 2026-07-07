@@ -160,12 +160,17 @@ fn active_grammar_sources(config: &Value) -> Result<Vec<GrammarSource>, DynError
 
 impl GrammarSource {
     fn sparse_checkout(&self) -> Option<Vec<String>> {
-        if self.name == "rpmspec" && self.git == "https://gitlab.com/cryptomilk/tree-sitter-rpmspec"
-        {
-            Some(vec!["src".to_string()])
-        } else {
-            None
-        }
+        let src_only = matches!(
+            (self.name.as_str(), self.git.as_str()),
+            (
+                "rpmspec",
+                "https://gitlab.com/cryptomilk/tree-sitter-rpmspec"
+            ) | (
+                "wikitext",
+                "https://github.com/santhoshtr/tree-sitter-wikitext"
+            )
+        );
+        src_only.then(|| vec!["src".to_string()])
     }
 
     fn prefetch_key(&self) -> Result<PrefetchKey, DynError> {
@@ -317,13 +322,15 @@ fn prefetch_archive(git: &str, rev: &str) -> Result<String, DynError> {
 }
 
 fn prefetch_source(source: &GrammarSource) -> Result<String, DynError> {
-    if source.git.starts_with(GITHUB_PREFIX) {
+    let sparse_checkout = source.sparse_checkout().unwrap_or_default();
+    if !sparse_checkout.is_empty() {
+        prefetch_git(&source.git, &source.rev, &sparse_checkout)
+    } else if source.git.starts_with(GITHUB_PREFIX) {
         let (owner, repo) = parse_github(&source.git)?;
         prefetch_github(&owner, &repo, &source.rev)
     } else if archive_url(&source.git, &source.rev).is_some() {
         prefetch_archive(&source.git, &source.rev)
     } else {
-        let sparse_checkout = source.sparse_checkout().unwrap_or_default();
         prefetch_git(&source.git, &source.rev, &sparse_checkout)
     }
 }
