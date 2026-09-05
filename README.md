@@ -41,8 +41,8 @@ Nixpkgs instead.
 contact Codeberg. `languages.toml` owns grammar URLs, revisions, and subpaths;
 `grammar-sources/<revision>.tar.gz` contains each selected Codeberg source tree,
 unmodified, with its upstream license notices. `hashes.json` records the original
-Nix source NAR hashes. Native `fetchTree` unpacks and verifies these local
-archives. Other hosts retain the upstream fetch path, and standalone
+Nix source NAR hashes. A fixed-output derivation unpacks and verifies each local
+archive at build time. Other hosts retain the upstream fetch path, and standalone
 `hx --grammar fetch` retains upstream behavior.
 
 The nine archives occupy 1,020,213 bytes compressed. They contain third-party
@@ -83,8 +83,8 @@ Measured against upstream Steel tip `5a8635be` and excluding documentation:
 | Native transport tests | 167 | 0 | +167 |
 | Focused CI workflow | 47 | 0 | +47 |
 | Steel component layering | 161 | 50 | +111 |
-| Pinned grammar source delivery and check | 36 | 1 | +35 |
-| **Total** | **955** | **55** | **+900** |
+| Pinned grammar source delivery and check | 38 | 1 | +37 |
+| **Total** | **957** | **55** | **+902** |
 
 The source-delivery row includes 11 JSON manifest lines. The nine compressed
 third-party source archives are counted separately above, not as owned LOC.

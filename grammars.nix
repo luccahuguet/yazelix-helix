@@ -53,12 +53,14 @@
       in
         assert lib.assertMsg (builtins.pathExists archive)
           "Missing pinned grammar archive for ${grammar.name}; refresh grammar-sources.";
-        builtins.fetchTree {
-          type = "tarball";
-          # Avoid a new store copy during read-only flake evaluation.
-          url = "file://${toString archive}";
-          narHash = codebergSourceHashes.${grammar.source.rev};
-        }
+        runCommand "source" {
+          src = archive;
+          outputHash = codebergSourceHashes.${grammar.source.rev};
+          outputHashMode = "recursive";
+        } ''
+          mkdir "$out"
+          tar -xzf "$src" -C "$out" --strip-components=1
+        ''
       else if isGitHubGrammar grammar
       then sourceGitHub
       else sourceGit;
