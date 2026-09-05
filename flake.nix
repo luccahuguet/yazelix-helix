@@ -59,6 +59,16 @@
         helix = self.packages.${system}.helix.override {
           rustPlatform = msrvPlatform;
         };
+        codeberg_grammars = pkgs.callPackage (builtins.scopedImport {
+          builtins = builtins // {
+            fetchTree = args:
+              assert lib.assertMsg (!(args ? url && lib.hasInfix "codeberg.org" args.url))
+                "Grammar evaluation must not fetch Codeberg.";
+              builtins.fetchTree args;
+          };
+        } ./grammars.nix) {
+          includeGrammarIf = grammar: lib.hasPrefix "https://codeberg.org/" grammar.source.git;
+        };
       })
       pkgsFor;
 

@@ -8,6 +8,7 @@
 }: let
   languagesConfig =
     builtins.fromTOML (builtins.readFile ./languages.toml);
+  codebergSourceHashes = builtins.fromJSON (builtins.readFile ./grammar-sources/hashes.json);
   isGitGrammar = grammar:
     builtins.hasAttr "source" grammar
     && builtins.hasAttr "git" grammar.source
@@ -46,7 +47,18 @@
       inherit (grammar.source) rev;
     };
     source =
-      if isGitHubGrammar grammar
+      if lib.hasPrefix "https://codeberg.org/" grammar.source.git
+      then let
+        archive = ./grammar-sources + "/${grammar.source.rev}.tar.gz";
+      in
+        assert lib.assertMsg (builtins.pathExists archive)
+          "Missing pinned grammar archive for ${grammar.name}; refresh grammar-sources.";
+        builtins.fetchTree {
+          type = "tarball";
+          url = "file://${archive}";
+          narHash = codebergSourceHashes.${grammar.source.rev};
+        }
+      else if isGitHubGrammar grammar
       then sourceGitHub
       else sourceGit;
   in
