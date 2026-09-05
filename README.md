@@ -83,8 +83,8 @@ Measured against upstream Steel tip `5a8635be` and excluding documentation:
 | Native transport tests | 167 | 0 | +167 |
 | Focused CI workflow | 47 | 0 | +47 |
 | Steel component layering | 161 | 50 | +111 |
-| Pinned grammar source delivery and check | 35 | 1 | +34 |
-| **Total** | **954** | **55** | **+899** |
+| Pinned grammar source delivery and check | 36 | 1 | +35 |
+| **Total** | **955** | **55** | **+900** |
 
 The source-delivery row includes 11 JSON manifest lines. The nine compressed
 third-party source archives are counted separately above, not as owned LOC.

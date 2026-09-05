@@ -55,7 +55,8 @@
           "Missing pinned grammar archive for ${grammar.name}; refresh grammar-sources.";
         builtins.fetchTree {
           type = "tarball";
-          url = "file://${archive}";
+          # Avoid a new store copy during read-only flake evaluation.
+          url = "file://${toString archive}";
           narHash = codebergSourceHashes.${grammar.source.rev};
         }
       else if isGitHubGrammar grammar
